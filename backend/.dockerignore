@@ -1,0 +1,6 @@
+# Never in an image: tests (incl. my private files), caches, the local venv.
+.venv
+tests
+**/__pycache__
+.pytest_cache
+.ruff_cache

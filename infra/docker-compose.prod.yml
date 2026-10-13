@@ -1,0 +1,53 @@
+# Production, on the VM. Run from the repo root:
+#   docker compose -f infra/docker-compose.prod.yml --env-file .env up -d --build
+# Nothing is published beyond 127.0.0.1; `tailscale serve` forwards my tailnet to it (docs/deploy.md).
+name: cognitrack
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ../backend
+    image: cognitrack-api
+    restart: unless-stopped
+    environment:
+      # The password goes into a URL: keep it to letters and digits (openssl rand -hex 24).
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:?set in .env}
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  web:
+    build: ../frontend
+    image: cognitrack-web
+    restart: unless-stopped
+    ports:
+      # Loopback only. Docker's published ports bypass the VM firewall, so never 0.0.0.0 here.
+      - "127.0.0.1:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  pgdata:

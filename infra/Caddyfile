@@ -1,0 +1,22 @@
+# Serves the built React app and proxies /api to FastAPI. Plain HTTP inside the VM: Tailscale
+# (`tailscale serve`) is the only way in and encrypts everything on the way.
+{
+	admin off
+	auto_https off
+}
+
+:80 {
+	encode gzip
+	header -Server
+
+	handle /api/* {
+		# Keeps the original Host header, which the API checks against ALLOWED_HOSTS.
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
+}
